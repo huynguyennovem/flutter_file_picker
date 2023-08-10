@@ -149,7 +149,7 @@
         _result([FlutterError errorWithCode:@"Unsupported picker type"
                                     message:@"Support for the Audio picker is not compiled in. Remove the Pod::PICKER_AUDIO=false statement from your Podfile."
                                     details:nil]);
-#endif      
+#endif
     } else if([call.method isEqualToString:@"save"]) {
 #ifdef PICKER_DOCUMENT
         NSString *fileName = [arguments valueForKey:@"fileName"];
@@ -221,7 +221,7 @@
         return;
     }
     
-    self.documentPickerController.allowsMultipleSelection = allowsMultipleSelection;    
+    self.documentPickerController.allowsMultipleSelection = allowsMultipleSelection;
     self.documentPickerController.delegate = self;
     self.documentPickerController.presentationController.delegate = self;
     
@@ -233,7 +233,7 @@
 - (void) resolvePickMedia:(MediaType)type withMultiPick:(BOOL)multiPick withCompressionAllowed:(BOOL)allowCompression  {
 
     self.type = type;
-    
+
 #ifdef PHPicker
     if (@available(iOS 14, *)) {
         PHPickerConfiguration *config = [[PHPickerConfiguration alloc] init];
@@ -418,9 +418,16 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls{
             NSError *error;
             // If file with same name exists remove it (replace file with new one)
             if ([[NSFileManager defaultManager] fileExistsAtPath:tempURL.path]) {
-                [[NSFileManager defaultManager] removeItemAtPath:tempURL.path error:&error];
+
                 if (error) {
                     NSLog(@"%@", error.localizedDescription);
+                }
+
+                // Move file from app_id-Inbox to tmp/filename
+                if([tempURL startAccessingSecurityScopedResource])
+                {
+                    [[NSFileManager defaultManager] moveItemAtPath:url.path toPath:tempURL.path error:&error];
+                    [tempURL stopAccessingSecurityScopedResource];
                 }
             }
             // Move file from app_id-Inbox to tmp/filename
@@ -513,7 +520,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls{
     NSString *documentsPath = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
     NSString *imagesDir = [documentsPath stringByAppendingPathComponent:@"picked_images"];
     NSFileManager *fileManager = [NSFileManager defaultManager];
-    
+
     if (![fileManager fileExistsAtPath:imagesDir]) {
         NSError *dirError;
         [fileManager createDirectoryAtPath:imagesDir withIntermediateDirectories:YES attributes:nil error:&dirError];
@@ -536,7 +543,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls{
     for (NSInteger index = 0; index < results.count; ++index) {
         dispatch_group_enter(_group);
         PHPickerResult * result = [results objectAtIndex:index];
-        
+
         dispatch_async(processQueue, ^{
             @autoreleasepool {
             if (isMediaSelection) {
@@ -560,7 +567,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls{
             } else {
                 typeIdentifier = @"public.movie";
             }
-               
+
                [result.itemProvider loadFileRepresentationForTypeIdentifier:typeIdentifier completionHandler:^(NSURL * _Nullable url, NSError * _Nullable error) {
                     @autoreleasepool {
                         if (error != nil || url == nil) {
@@ -576,14 +583,14 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls{
                                 [[NSUUID UUID] UUIDString],
                                 (long)[[NSDate date] timeIntervalSince1970],
                                 url.pathExtension.length > 0 ? url.pathExtension : @"jpg"];
-                            
+
                             NSString *destinationPath = [imagesDir stringByAppendingPathComponent:filename];
                             NSURL *destinationUrl = [NSURL fileURLWithPath:destinationPath];
-                            
+
                             // Load image data with options to reduce memory usage
                             NSError *loadError = nil;
                             NSData *imageData = [NSData dataWithContentsOfURL:url options:NSDataReadingMappedIfSafe error:&loadError];
-                            
+
                             if (loadError || !imageData) {
                                 [errors addObject:[NSString stringWithFormat:@"Failed to load image data at index %ld: %@",
                                     (long)index, loadError.localizedDescription ?: @"Unknown error"]];
@@ -596,15 +603,15 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls{
                                         (long)index, loadError.localizedDescription]];
                                 }
                             }
-                            
+
                             // Clean up
                             imageData = nil;
-                            
+
                         } @catch (NSException *exception) {
                             [errors addObject:[NSString stringWithFormat:@"Exception processing image at index %ld: %@",
                                 (long)index, exception.description]];
                         }
-                        
+
                         // Update progress
                         completedCount++;
                         if(self->_eventSink != nil) {
@@ -616,7 +623,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls{
                                 });
                             });
                         }
-                        
+
                         dispatch_group_leave(self->_group);
                     }
                 }];
@@ -626,7 +633,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls{
 
     dispatch_group_notify(_group, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),^{
         self->_group = nil;
-        
+
         if(self->_eventSink != nil) {
             self->_eventSink([NSNumber numberWithBool:NO]);
         }
