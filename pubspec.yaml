@@ -33,4 +33,4 @@ flutter:
         package: com.mr.flutter.plugin.filepicker
         pluginClass: FilePickerPlugin
       ios:
-        pluginClass: FilePickerPlugin
+        pluginClass: FLTFilePickerPlugin

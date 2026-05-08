@@ -6,7 +6,7 @@ import FlutterMacOS
 import Foundation
 
 #if os(iOS) || (os(macOS) && canImport(FlutterMacOS))
-public class FilePickerPlugin: NSObject, FlutterPlugin {
+public class FLTFilePickerPlugin: NSObject, FlutterPlugin {
     public static func register(with registrar: FlutterPluginRegistrar) {
 #if os(iOS)
         let channel = FlutterMethodChannel(
@@ -17,7 +17,7 @@ public class FilePickerPlugin: NSObject, FlutterPlugin {
             name: "miguelruivo.flutter.plugins.filepickerevent",
             binaryMessenger: registrar.messenger())
 
-        let instance = FilePickerPlugin(registrar: registrar)
+        let instance = FLTFilePickerPlugin(registrar: registrar)
         registrar.addMethodCallDelegate(instance, channel: channel)
         eventChannel.setStreamHandler(instance.handler)
 #elseif os(macOS) && canImport(FlutterMacOS)
