@@ -18,8 +18,15 @@ final class IOSFilePickerHandler: NSObject,
     private var loadDataToMemory = false
     private var isDirectoryPicker = false
     private var isSaveFile = false
+    private var activePickerController: UIViewController?
+    private var isCancellationRequested = false
 
     func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        if call.method == "cancelCurrentRequest" {
+            result(cancelCurrentRequest())
+            return
+        }
+
         if self.result != nil {
             result(
                 FlutterError(
@@ -30,6 +37,7 @@ final class IOSFilePickerHandler: NSObject,
         }
 
         self.result = result
+        isCancellationRequested = false
 
         if call.method == "clear" {
             self.result?(clearTemporaryFiles())
@@ -118,6 +126,7 @@ final class IOSFilePickerHandler: NSObject,
         didFinishPicking results: [PHPickerResult]
     ) {
         picker.dismiss(animated: true)
+        activePickerController = nil
 
         guard let currentResult = result else {
             return
@@ -127,6 +136,7 @@ final class IOSFilePickerHandler: NSObject,
             currentResult(nil)
             result = nil
             eventSink?(false)
+            isCancellationRequested = false
             return
         }
 
@@ -156,23 +166,31 @@ final class IOSFilePickerHandler: NSObject,
                 return
             }
             eventSink?(false)
+            if self.isCancellationRequested {
+                self.isCancellationRequested = false
+                return
+            }
             currentResult(resolved.isEmpty ? nil : resolved)
-            result = nil
+            self.result = nil
         }
     }
 
     func documentPickerWasCancelled(_: UIDocumentPickerViewController) {
+        activePickerController = nil
         result?(nil)
         result = nil
+        isCancellationRequested = false
     }
 
     func presentationControllerDidDismiss(
         _: UIPresentationController
     ) {
+        activePickerController = nil
         if result != nil {
             result?(nil)
             result = nil
         }
+        isCancellationRequested = false
     }
 
     func documentPicker(
@@ -187,6 +205,8 @@ final class IOSFilePickerHandler: NSObject,
             currentResult(urls.first?.path)
             result = nil
             isSaveFile = false
+            activePickerController = nil
+            isCancellationRequested = false
             return
         }
 
@@ -194,6 +214,8 @@ final class IOSFilePickerHandler: NSObject,
             currentResult(urls.first?.path)
             result = nil
             isDirectoryPicker = false
+            activePickerController = nil
+            isCancellationRequested = false
             return
         }
 
@@ -210,6 +232,8 @@ final class IOSFilePickerHandler: NSObject,
 
         currentResult(resolved.isEmpty ? nil : resolved)
         result = nil
+        activePickerController = nil
+        isCancellationRequested = false
     }
 
     private func presentMediaPicker(type: String, allowsMultipleSelection: Bool) {
@@ -228,6 +252,7 @@ final class IOSFilePickerHandler: NSObject,
         let picker = PHPickerViewController(configuration: configuration)
         picker.delegate = self
         picker.presentationController?.delegate = self
+        activePickerController = picker
         topViewController()?.present(picker, animated: true)
     }
 
@@ -242,6 +267,7 @@ final class IOSFilePickerHandler: NSObject,
         picker.delegate = self
         picker.presentationController?.delegate = self
         picker.allowsMultipleSelection = allowsMultipleSelection
+        activePickerController = picker
         topViewController()?.present(picker, animated: true)
     }
 
@@ -276,7 +302,30 @@ final class IOSFilePickerHandler: NSObject,
             asCopy: true)
         picker.delegate = self
         picker.presentationController?.delegate = self
+        activePickerController = picker
         topViewController()?.present(picker, animated: true)
+    }
+
+    private func cancelCurrentRequest() -> Bool {
+        let hadRequest = result != nil || activePickerController != nil
+
+        guard hadRequest else {
+            return false
+        }
+
+        isCancellationRequested = true
+        eventSink?(false)
+        result?(nil)
+        result = nil
+        isDirectoryPicker = false
+        isSaveFile = false
+
+        if let activePickerController {
+            activePickerController.dismiss(animated: true)
+            self.activePickerController = nil
+        }
+
+        return true
     }
 
     private func resolveCustomContentTypes(_ allowedExtensions: [String]) -> [UTType] {

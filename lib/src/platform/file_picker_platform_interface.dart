@@ -69,6 +69,14 @@ abstract class FilePickerPlatform extends PlatformInterface {
     throw UnimplementedError('clearTemporaryFiles() has not been implemented.');
   }
 
+  /// Asks the underlying platform to cancel the active picker request, if any.
+  ///
+  /// Returns `true` when the platform implementation actively cancelled an
+  /// in-flight request, or `false` when no cancellation support is available.
+  Future<bool> cancelCurrentRequest() async {
+    return false;
+  }
+
   /// Selects a directory and returns its absolute path.
   Future<String?> getDirectoryPath({
     String? dialogTitle,

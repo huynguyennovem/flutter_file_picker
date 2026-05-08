@@ -130,6 +130,15 @@ abstract final class FilePicker {
     return FilePickerPlatform.instance.clearTemporaryFiles();
   }
 
+  /// Cancels the active native picker request, if supported by the platform.
+  ///
+  /// Returns `true` when an in-flight request was actively cancelled, or
+  /// `false` when there was nothing to cancel or the platform does not expose
+  /// cancellation for the current picker implementation.
+  static Future<bool> cancelCurrentRequest() {
+    return FilePickerPlatform.instance.cancelCurrentRequest();
+  }
+
   /// Selects a directory and returns its absolute path.
   ///
   /// On Android, this requires to be running on SDK 21 or above, else won't work.

@@ -69,6 +69,10 @@ class MethodChannelFilePicker extends FilePickerPlatform {
       methodChannel.invokeMethod<bool>('clear');
 
   @override
+  Future<bool> cancelCurrentRequest() async =>
+      await methodChannel.invokeMethod<bool>('cancelCurrentRequest') ?? false;
+
+  @override
   Future<String?> getDirectoryPath({
     String? dialogTitle,
     bool lockParentWindow = false,

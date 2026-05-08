@@ -126,6 +126,10 @@ class FilePickerPlugin : MethodCallHandler, FlutterPlugin,
         val method = call.method
 
         when (method) {
+            "cancelCurrentRequest" -> {
+                result.success(false)
+            }
+
             "clear" -> {
                 result.success(activity?.applicationContext?.let { clearCache(it) })
             }
