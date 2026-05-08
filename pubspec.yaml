@@ -34,4 +34,3 @@ flutter:
         pluginClass: FilePickerPlugin
       ios:
         pluginClass: FilePickerPlugin
-        sharedDarwinSource: true
