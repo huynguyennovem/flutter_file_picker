@@ -20,6 +20,8 @@ final class IOSFilePickerHandler: NSObject,
     private var isSaveFile = false
     private var activePickerController: UIViewController?
     private var isCancellationRequested = false
+    private var activeMediaPickerType: String?
+    private weak var loadingOverlayView: UIView?
 
     func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         if call.method == "cancelCurrentRequest" {
@@ -71,11 +73,13 @@ final class IOSFilePickerHandler: NSObject,
 
         switch call.method {
         case "any":
+            activeMediaPickerType = nil
             presentDocumentPicker(
                 contentTypes: [.item],
                 allowsMultipleSelection: allowMultipleSelection,
                 asDirectoryPicker: false)
         case "custom":
+            activeMediaPickerType = nil
             let allowed = arguments["allowedExtensions"] as? [String] ?? []
             let contentTypes = resolveCustomContentTypes(allowed)
             if contentTypes.isEmpty {
@@ -93,15 +97,18 @@ final class IOSFilePickerHandler: NSObject,
                 allowsMultipleSelection: allowMultipleSelection,
                 asDirectoryPicker: false)
         case "image", "video", "media":
+            activeMediaPickerType = call.method
             presentMediaPicker(
                 type: call.method,
                 allowsMultipleSelection: allowMultipleSelection)
         case "audio":
+            activeMediaPickerType = nil
             presentDocumentPicker(
                 contentTypes: [.audio],
                 allowsMultipleSelection: allowMultipleSelection,
                 asDirectoryPicker: false)
         case "save":
+            activeMediaPickerType = nil
             saveFile(arguments)
         default:
             result(FlutterMethodNotImplemented)
@@ -133,16 +140,20 @@ final class IOSFilePickerHandler: NSObject,
         }
 
         if results.isEmpty {
+            hideLoadingOverlay()
             currentResult(nil)
             result = nil
             eventSink?(false)
             isCancellationRequested = false
+            activeMediaPickerType = nil
             return
         }
 
         eventSink?(true)
+        showLoadingOverlay(for: activeMediaPickerType, selectionCount: results.count)
         let group = DispatchGroup()
         var resolved: [[String: Any]] = []
+        let resolvedLock = NSLock()
 
         for item in results {
             group.enter()
@@ -156,7 +167,9 @@ final class IOSFilePickerHandler: NSObject,
                     return
                 }
                 if let fileInfo = self.makeFileInfo(from: copiedURL) {
+                    resolvedLock.lock()
                     resolved.append(fileInfo)
+                    resolvedLock.unlock()
                 }
             }
         }
@@ -166,31 +179,38 @@ final class IOSFilePickerHandler: NSObject,
                 return
             }
             eventSink?(false)
+            self.hideLoadingOverlay()
             if self.isCancellationRequested {
                 self.isCancellationRequested = false
+                self.activeMediaPickerType = nil
                 return
             }
             currentResult(resolved.isEmpty ? nil : resolved)
             self.result = nil
+            self.activeMediaPickerType = nil
         }
     }
 
     func documentPickerWasCancelled(_: UIDocumentPickerViewController) {
+        hideLoadingOverlay()
         activePickerController = nil
         result?(nil)
         result = nil
         isCancellationRequested = false
+        activeMediaPickerType = nil
     }
 
     func presentationControllerDidDismiss(
         _: UIPresentationController
     ) {
+        hideLoadingOverlay()
         activePickerController = nil
         if result != nil {
             result?(nil)
             result = nil
         }
         isCancellationRequested = false
+        activeMediaPickerType = nil
     }
 
     func documentPicker(
@@ -202,20 +222,24 @@ final class IOSFilePickerHandler: NSObject,
         }
 
         if isSaveFile {
+            hideLoadingOverlay()
             currentResult(urls.first?.path)
             result = nil
             isSaveFile = false
             activePickerController = nil
             isCancellationRequested = false
+            activeMediaPickerType = nil
             return
         }
 
         if isDirectoryPicker {
+            hideLoadingOverlay()
             currentResult(urls.first?.path)
             result = nil
             isDirectoryPicker = false
             activePickerController = nil
             isCancellationRequested = false
+            activeMediaPickerType = nil
             return
         }
 
@@ -230,10 +254,12 @@ final class IOSFilePickerHandler: NSObject,
             resolved.append(fileInfo)
         }
 
+        hideLoadingOverlay()
         currentResult(resolved.isEmpty ? nil : resolved)
         result = nil
         activePickerController = nil
         isCancellationRequested = false
+        activeMediaPickerType = nil
     }
 
     private func presentMediaPicker(type: String, allowsMultipleSelection: Bool) {
@@ -319,6 +345,8 @@ final class IOSFilePickerHandler: NSObject,
         result = nil
         isDirectoryPicker = false
         isSaveFile = false
+        activeMediaPickerType = nil
+        hideLoadingOverlay()
 
         if let activePickerController {
             activePickerController.dismiss(animated: true)
@@ -326,6 +354,108 @@ final class IOSFilePickerHandler: NSObject,
         }
 
         return true
+    }
+
+    private func showLoadingOverlay(for mediaType: String?, selectionCount: Int) {
+        DispatchQueue.main.async {
+            self.hideLoadingOverlay()
+
+            guard let window = self.topViewController()?.view.window
+                    ?? UIApplication.shared.windows.first(where: { $0.isKeyWindow })
+            else {
+                return
+            }
+
+            let overlay = UIView(frame: window.bounds)
+            overlay.backgroundColor = UIColor.black.withAlphaComponent(0.32)
+            overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+
+            let card = UIView()
+            card.backgroundColor = .systemBackground
+            card.layer.cornerRadius = 24
+            card.layer.shadowColor = UIColor.black.withAlphaComponent(0.18).cgColor
+            card.layer.shadowOpacity = 1
+            card.layer.shadowRadius = 18
+            card.layer.shadowOffset = CGSize(width: 0, height: 8)
+            card.translatesAutoresizingMaskIntoConstraints = false
+
+            let indicator = UIActivityIndicatorView(style: .large)
+            indicator.translatesAutoresizingMaskIntoConstraints = false
+            indicator.startAnimating()
+
+            let titleLabel = UILabel()
+            titleLabel.translatesAutoresizingMaskIntoConstraints = false
+            titleLabel.font = .preferredFont(forTextStyle: .headline)
+            titleLabel.textColor = .label
+            titleLabel.numberOfLines = 0
+            titleLabel.textAlignment = .center
+            titleLabel.text = self.loadingOverlayTitle(
+                for: mediaType,
+                selectionCount: selectionCount)
+
+            let messageLabel = UILabel()
+            messageLabel.translatesAutoresizingMaskIntoConstraints = false
+            messageLabel.font = .preferredFont(forTextStyle: .subheadline)
+            messageLabel.textColor = .secondaryLabel
+            messageLabel.numberOfLines = 0
+            messageLabel.textAlignment = .center
+            messageLabel.text = "Please wait while the selected files are prepared."
+
+            card.addSubview(indicator)
+            card.addSubview(titleLabel)
+            card.addSubview(messageLabel)
+            overlay.addSubview(card)
+            window.addSubview(overlay)
+
+            NSLayoutConstraint.activate([
+                card.centerXAnchor.constraint(equalTo: overlay.centerXAnchor),
+                card.centerYAnchor.constraint(equalTo: overlay.centerYAnchor),
+                card.leadingAnchor.constraint(greaterThanOrEqualTo: overlay.leadingAnchor, constant: 24),
+                card.trailingAnchor.constraint(lessThanOrEqualTo: overlay.trailingAnchor, constant: -24),
+                card.widthAnchor.constraint(lessThanOrEqualToConstant: 360),
+
+                indicator.topAnchor.constraint(equalTo: card.topAnchor, constant: 28),
+                indicator.centerXAnchor.constraint(equalTo: card.centerXAnchor),
+
+                titleLabel.topAnchor.constraint(equalTo: indicator.bottomAnchor, constant: 18),
+                titleLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 24),
+                titleLabel.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -24),
+
+                messageLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 10),
+                messageLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 24),
+                messageLabel.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -24),
+                messageLabel.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -24),
+            ])
+
+            self.loadingOverlayView = overlay
+        }
+    }
+
+    private func hideLoadingOverlay() {
+        DispatchQueue.main.async {
+            self.loadingOverlayView?.removeFromSuperview()
+            self.loadingOverlayView = nil
+        }
+    }
+
+    private func loadingOverlayTitle(
+        for mediaType: String?,
+        selectionCount: Int
+    ) -> String {
+        switch mediaType {
+        case "video":
+            return selectionCount > 1
+                ? "Loading selected videos"
+                : "Loading selected video"
+        case "image":
+            return selectionCount > 1
+                ? "Loading selected images"
+                : "Loading selected image"
+        default:
+            return selectionCount > 1
+                ? "Loading selected files"
+                : "Loading selected file"
+        }
     }
 
     private func resolveCustomContentTypes(_ allowedExtensions: [String]) -> [UTType] {
